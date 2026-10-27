@@ -96,6 +96,16 @@ that PID only; never "the first DOSBox window" and never kill by process name. A
 tests as separate processes. Remove the sandbox at exit, but first move any screenshot a test saved under its
 own name to a shared results folder (gotcha 10).
 
+### Find where a hang is: the guest CPU's registers
+Guest RAM shows the state, not the code that is looping. DOSBox 0.74 (32-bit) keeps the emulated CPU's
+registers in its own data segment, so a host script can sample CS:IP read-only too:
+- the segment registers are a global array of eight 16-bit values followed by their eight 32-bit
+  physical bases (in real mode base = value x 16): find it by that pattern in the DOSBox module's
+  data with `ReadProcessMemory`; the general registers (eax ... edi, then eip and flags) sit at a fixed
+  offset after it in a given build (E0h in GOG's 0.74-2; check it against the flags word);
+- a hang detector then waits until the frame has been unchanged for N seconds (90 here) and saves a few
+  dozen CS:IP samples, the guest RAM and a screenshot: the samples show which routine it loops in.
+
 ### A machine-wide cap
 Parallel test runners, agents and git worktrees all launch DOSBox, so cap the total, not per runner:
 - N lock files in a fixed folder (e.g. `~/.coltest-dosbox-slots/slot0..N.lock`); `launch()` takes one with an
@@ -239,6 +249,14 @@ Only DOSBox 0.74-2 (SDL 1.2) on Windows 11, driving one game. DOSBox Staging and
     that was already running (for example, one waiting for a free slot) keeps the launch code it imported, so
     restart runs before you measure. And when you swap the launch code, test the whole launch function, not
     just the new helper: a leftover `return p.pid` after the change failed every in-game test.
+
+22. **A suite entry pointed at a file that didn't exist ("unknown test").** (2026-10-27.) **Cause:** the
+    PowerShell test list (CRLF, Windows paths like `tests\f1_test.py`) was edited with sed/printf-style
+    tools, which turned `\f` and `\r` in the paths into a form feed and a carriage return. **Fix:** edit
+    such files as bytes (Python, `rb`/`wb`), keep CRLF, and check each changed line's repr.
+23. **Twice as many DOSBoxes as planned.** (2026-10-27.) **Cause:** each in-game test runs the original and
+    the patched EXE in parallel by default, so N agents "each using one DOSBox" used 2N. **Fix:** a
+    variant-jobs setting (1 when several agents share the machine), on top of the machine-wide cap.
 
 ## Seen in
 - Sid Meier's Colonization 3.0 (DOS, GOG release; VICEROY.EXE, an RTLink-overlaid executable) binary-patching
